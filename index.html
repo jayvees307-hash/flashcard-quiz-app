@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="An interactive flashcard quiz with a custom deck creator and mastery tracking.">
 <title>Flashcard Quiz</title>
 
-<!-- Tailwind CSS (CDN) and Lucide icons (CDN) -->
+<!-- Tailwind CSS (CDN) and Lucide icons (CDN), versions pinned -->
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,6 +28,8 @@
 </script>
 
 <style>
+  html { color-scheme: dark; }
+
   /* ---- 3D flip card ---- */
   .scene { perspective: 1200px; }
   .card-inner {
@@ -34,13 +38,27 @@
     transition: transform .6s cubic-bezier(.4, .2, .2, 1);
   }
   .card-inner.flipped { transform: rotateY(180deg); }
+
+  /* Each face is a flex column. The label sits at the top, the hint at the
+     bottom, and the text uses `margin: auto` to center itself between them.
+     Unlike justify-content:center, auto margins never push overflowing text
+     above the scroll area, so long cards scroll from the top instead of
+     being clipped. */
   .face {
     position: absolute; inset: 0;
     backface-visibility: hidden; -webkit-backface-visibility: hidden;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 2rem; text-align: center; overflow-y: auto;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 1.25rem 1.5rem; text-align: center;
+    overflow-y: auto; overscroll-behavior: contain;
   }
   .face.back { transform: rotateY(180deg); }
+  .face > .label, .face > .hint { flex: none; }
+  .face > .text {
+    margin: auto 0; width: 100%;
+    white-space: pre-line;            /* keep line breaks the user typed */
+    overflow-wrap: anywhere;          /* break very long words / URLs */
+  }
+
   /* Respect users who prefer reduced motion */
   @media (prefers-reduced-motion: reduce) {
     .card-inner, .bar { transition: none !important; }
@@ -51,6 +69,10 @@
 </head>
 
 <body class="bg-ink text-slate-200 font-sans min-h-screen antialiased">
+<noscript>
+  <p class="p-6 text-center">This flashcard app needs JavaScript enabled.</p>
+</noscript>
+
 <main class="max-w-2xl mx-auto px-4 py-8 sm:py-12">
 
   <!-- Header -->
@@ -64,7 +86,7 @@
   <!-- Progress tracker -->
   <section aria-label="Progress" class="mb-5">
     <div class="flex justify-between text-sm mb-2">
-      <span id="progressText" class="font-semibold text-white">Card 1 of 5</span>
+      <span id="progressText" class="font-semibold text-white" aria-live="polite">Card 1 of 5</span>
       <span id="statusBadge" class="text-slate-400">Not rated yet</span>
     </div>
     <div class="h-2 rounded-full bg-panel overflow-hidden" role="progressbar" aria-label="Position in deck">
@@ -73,44 +95,44 @@
   </section>
 
   <!-- Flip card -->
-  <section class="scene h-72 sm:h-80 mb-5">
-    <div id="card" class="card-inner cursor-pointer" role="button" tabindex="0"
+  <section class="scene h-80 sm:h-96 mb-5">
+    <div id="card" class="card-inner cursor-pointer" role="button" tabindex="0" aria-pressed="false"
          aria-label="Flashcard. Press Space or click to flip.">
-      <div class="face front bg-panel border border-edge rounded-3xl shadow-2xl shadow-black/40">
-        <span class="text-xs text-iris font-semibold mb-4 flex items-center gap-1.5">
+      <div id="frontFace" class="face front bg-panel border border-edge rounded-3xl shadow-2xl shadow-black/40">
+        <span class="label text-xs text-iris font-semibold mb-3 flex items-center gap-1.5">
           <i data-lucide="help-circle" class="w-4 h-4"></i> Question
         </span>
-        <p id="frontText" class="text-xl sm:text-2xl font-semibold text-white leading-snug"></p>
-        <span class="absolute bottom-4 text-xs text-slate-500">Click or press Space to flip</span>
+        <p id="frontText" class="text"></p>
+        <span class="hint mt-3 text-xs text-slate-500">Click or press Space to flip</span>
       </div>
-      <div class="face back bg-[#1b2133] border border-iris/40 rounded-3xl shadow-2xl shadow-black/40">
-        <span class="text-xs text-mint font-semibold mb-4 flex items-center gap-1.5">
+      <div id="backFace" class="face back bg-[#1b2133] border border-iris/40 rounded-3xl shadow-2xl shadow-black/40" aria-hidden="true">
+        <span class="label text-xs text-mint font-semibold mb-3 flex items-center gap-1.5">
           <i data-lucide="check-circle-2" class="w-4 h-4"></i> Answer
         </span>
-        <p id="backText" class="text-lg sm:text-xl text-slate-100 leading-relaxed"></p>
+        <p id="backText" class="text"></p>
       </div>
     </div>
   </section>
 
   <!-- Navigation controls -->
   <section class="grid grid-cols-3 gap-3 mb-3">
-    <button id="prevBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl bg-panel border border-edge hover:border-iris/60 font-semibold">
+    <button id="prevBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl bg-panel border border-edge hover:border-iris/60 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
       <i data-lucide="arrow-left" class="w-4 h-4"></i> Previous
     </button>
-    <button id="shuffleBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl bg-panel border border-edge hover:border-iris/60 font-semibold">
+    <button id="shuffleBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl bg-panel border border-edge hover:border-iris/60 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
       <i data-lucide="shuffle" class="w-4 h-4"></i> Shuffle
     </button>
-    <button id="nextBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl bg-iris text-ink hover:brightness-110 font-semibold">
+    <button id="nextBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl bg-iris text-ink hover:brightness-110 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
       Next <i data-lucide="arrow-right" class="w-4 h-4"></i>
     </button>
   </section>
 
   <!-- Mastery buttons -->
   <section class="grid grid-cols-2 gap-3 mb-5">
-    <button id="reviewBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl border border-amber/50 text-amber hover:bg-amber/10 font-semibold">
+    <button id="reviewBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl border border-amber/50 text-amber hover:bg-amber/10 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
       <i data-lucide="repeat" class="w-4 h-4"></i> Needs review
     </button>
-    <button id="masterBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl border border-mint/50 text-mint hover:bg-mint/10 font-semibold">
+    <button id="masterBtn" class="flex items-center justify-center gap-2 py-3 rounded-xl border border-mint/50 text-mint hover:bg-mint/10 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
       <i data-lucide="check" class="w-4 h-4"></i> Mark as mastered
     </button>
   </section>
@@ -134,13 +156,13 @@
     <div class="space-y-3">
       <div>
         <label for="qInput" class="block text-sm text-slate-400 mb-1">Question</label>
-        <textarea id="qInput" rows="2" maxlength="300" class="w-full rounded-xl bg-ink border border-edge px-3 py-2 text-white placeholder-slate-600 focus:border-iris focus:outline-none" placeholder="What does CSS stand for?"></textarea>
+        <textarea id="qInput" rows="2" autocomplete="off" class="w-full rounded-xl bg-ink border border-edge px-3 py-2 text-white placeholder-slate-600 focus:border-iris focus:outline-none" placeholder="What does CSS stand for?"></textarea>
       </div>
       <div>
         <label for="aInput" class="block text-sm text-slate-400 mb-1">Answer</label>
-        <textarea id="aInput" rows="2" maxlength="500" class="w-full rounded-xl bg-ink border border-edge px-3 py-2 text-white placeholder-slate-600 focus:border-iris focus:outline-none" placeholder="Cascading Style Sheets"></textarea>
+        <textarea id="aInput" rows="2" autocomplete="off" class="w-full rounded-xl bg-ink border border-edge px-3 py-2 text-white placeholder-slate-600 focus:border-iris focus:outline-none" placeholder="Cascading Style Sheets"></textarea>
       </div>
-      <p id="formError" class="text-sm text-amber hidden">Enter both a question and an answer.</p>
+      <p id="formError" role="alert" class="text-sm text-amber hidden"></p>
       <button id="addBtn" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-iris text-ink font-semibold hover:brightness-110">
         <i data-lucide="plus" class="w-4 h-4"></i> Add card
       </button>
@@ -158,14 +180,25 @@
 <script>
 /* =====================================================================
    Flashcard Quiz — vanilla JS
+
    State shape (saved to localStorage):
      customCards : [{id, q, a}]            user-created cards
      status      : { [cardId]: 'mastered' | 'review' }
      order       : [cardId, ...]           current deck order (shuffle result)
      index       : number                  current position in `order`
+
+   Safety notes:
+   - User text is only ever written with textContent / setAttribute, never
+     innerHTML, so it cannot be parsed as markup.
+   - Everything read back from localStorage is re-validated and sanitized,
+     because storage can be edited by hand, by extensions, or corrupted.
    ===================================================================== */
 
 const STORAGE_KEY = 'flashcard-quiz-v1';
+const Q_MAX = 300;          // max characters in a question
+const A_MAX = 500;          // max characters in an answer
+const MAX_CUSTOM = 200;     // cap on user-created cards
+const ID_RE = /^[a-z0-9]{1,40}$/i;   // ids are alphanumeric only
 
 // ---- 1. Pre-loaded deck (5 CS / web dev cards) ----
 const BASE_CARDS = [
@@ -181,94 +214,170 @@ const BASE_CARDS = [
     a: 'A function that keeps access to variables from the scope where it was created, even after that scope has finished running.' }
 ];
 
-// ---- 2. State + persistence ----
+// ---- 2. Sanitizing helpers ----
+
+/**
+ * Normalize untrusted text: coerce to string, normalize line endings, strip
+ * control characters plus zero-width and bidirectional-override characters
+ * (used for text spoofing), limit blank lines, trim, and cap the length.
+ * Newlines and tabs are kept; display uses white-space: pre-line.
+ */
+function clean(value, max) {
+  return String(value == null ? '' : value)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .slice(0, max);
+}
+
+// ---- 3. State + persistence ----
 let state = loadState();
 let flipped = false;
+let advanceTimer = null;   // pending auto-advance after rating a card
+let renderTimer = null;    // pending text swap after a flip-back
 
-/** Read saved state safely; fall back to defaults if missing or corrupted. */
+/** Read saved state; validate every field and fall back to defaults on any problem. */
 function loadState() {
   const fresh = { customCards: [], status: {}, order: [], index: 0 };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved && typeof saved === 'object') {
-      return {
-        customCards: Array.isArray(saved.customCards) ? saved.customCards.filter(c => c && c.id && c.q && c.a) : [],
-        status: saved.status && typeof saved.status === 'object' ? saved.status : {},
-        order: Array.isArray(saved.order) ? saved.order : [],
-        index: Number.isInteger(saved.index) ? saved.index : 0
-      };
+    if (!saved || typeof saved !== 'object') return fresh;
+
+    const baseIds = new Set(BASE_CARDS.map(c => c.id));
+    const seen = new Set();
+    const customCards = [];
+    (Array.isArray(saved.customCards) ? saved.customCards : []).forEach(c => {
+      if (!c || typeof c.id !== 'string' || !ID_RE.test(c.id)) return;
+      if (baseIds.has(c.id) || seen.has(c.id)) return;        // no id collisions
+      const q = clean(c.q, Q_MAX), a = clean(c.a, A_MAX);
+      if (!q || !a) return;                                    // drop empty cards
+      seen.add(c.id);
+      customCards.push({ id: c.id, q, a });
+    });
+
+    const status = {};
+    if (saved.status && typeof saved.status === 'object') {
+      Object.keys(saved.status).forEach(id => {
+        const v = saved.status[id];
+        if (ID_RE.test(id) && (v === 'mastered' || v === 'review')) status[id] = v;
+      });
     }
-  } catch (e) { /* storage unavailable or corrupt: use defaults */ }
-  return fresh;
+
+    return {
+      customCards,
+      status,
+      order: Array.isArray(saved.order) ? saved.order.filter(id => typeof id === 'string') : [],
+      index: Number.isInteger(saved.index) ? saved.index : 0
+    };
+  } catch (e) { return fresh; }   // storage blocked or JSON corrupted
 }
 
 function saveState() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-  catch (e) { /* ignore quota / private-mode errors */ }
+  catch (e) { /* ignore quota / private-mode errors; the app still works for this session */ }
 }
 
-/** All cards (built-in + custom) keyed by id. */
+/** All cards (built-in + custom). */
 function allCards() { return [...BASE_CARDS, ...state.customCards]; }
 
-/** Make `state.order` match the real set of cards: drop stale ids, append new ones. */
+/**
+ * Make `state.order` match the real set of cards: drop unknown and duplicate
+ * ids, append missing ones, and clamp the index (safe for an empty deck).
+ */
 function syncOrder() {
-  const ids = allCards().map(c => c.id);
-  const kept = state.order.filter(id => ids.includes(id));
-  ids.forEach(id => { if (!kept.includes(id)) kept.push(id); });
+  const valid = new Set(allCards().map(c => c.id));
+  const seen = new Set();
+  const kept = state.order.filter(id => valid.has(id) && !seen.has(id) && seen.add(id));
+  allCards().forEach(c => { if (!kept.includes(c.id)) kept.push(c.id); });
   state.order = kept;
-  state.index = Math.min(Math.max(state.index, 0), kept.length - 1);
+  state.index = Math.min(Math.max(state.index, 0), Math.max(kept.length - 1, 0));
 }
 
-/** The card currently shown. */
+/** The card currently shown, or undefined if the deck is empty. */
 function currentCard() {
   const id = state.order[state.index];
   return allCards().find(c => c.id === id);
 }
 
-// ---- 3. DOM references ----
+// ---- 4. DOM references ----
 const $ = id => document.getElementById(id);
 const cardEl = $('card');
+const CONTROL_IDS = ['prevBtn', 'nextBtn', 'shuffleBtn', 'masterBtn', 'reviewBtn'];
 
-// ---- 4. Rendering ----
+// ---- 5. Rendering ----
+
+/** Pick a text size class so long cards stay readable without overflowing early. */
+function sizeClass(len, isFront) {
+  const tone = isFront ? 'font-semibold text-white leading-snug' : 'text-slate-100 leading-relaxed';
+  const size = len > 260 ? 'text-sm sm:text-base' : len > 120 ? 'text-base sm:text-lg' : 'text-xl sm:text-2xl';
+  return `text ${size} ${tone}`;
+}
+
 function renderCard() {
   const card = currentCard();
-  $('frontText').textContent = card.q;   // textContent: user input is never parsed as HTML
-  $('backText').textContent = card.a;
+  const frontEl = $('frontText'), backEl = $('backText');
+
+  if (!card) {
+    // Empty-deck state: nothing to study yet
+    frontEl.textContent = 'No cards yet. Add one below to get started.';
+    frontEl.className = sizeClass(0, true);
+    backEl.textContent = '';
+  } else {
+    frontEl.textContent = card.q;      // textContent: never parsed as HTML
+    backEl.textContent = card.a;
+    frontEl.className = sizeClass(card.q.length, true);
+    backEl.className = sizeClass(card.a.length, false);
+  }
+  $('frontFace').scrollTop = 0;        // long cards always start at the top
+  $('backFace').scrollTop = 0;
   renderProgress();
 }
 
 function renderProgress() {
   const total = state.order.length;
-  $('progressText').textContent = `Card ${state.index + 1} of ${total}`;
-  $('progressBar').style.width = `${((state.index + 1) / total) * 100}%`;
+  const card = currentCard();
+  const empty = !card;
 
-  // Dynamic browser tab title, e.g. "(1/5) Flashcard Quiz"
-  document.title = `(${state.index + 1}/${total}) Flashcard Quiz`;
+  // Disable controls when there is nothing to act on
+  CONTROL_IDS.forEach(id => { $(id).disabled = empty; });
 
-  // Rating badge for the current card
-  const s = state.status[currentCard().id];
-  const badge = $('statusBadge');
-  badge.textContent = s === 'mastered' ? 'Mastered' : s === 'review' ? 'Needs review' : 'Not rated yet';
-  badge.className = s === 'mastered' ? 'text-mint font-semibold'
-                  : s === 'review' ? 'text-amber font-semibold' : 'text-slate-400';
-
-  // Mastery totals
+  // Mastery totals (only count ids that exist in the deck)
   let mastered = 0, review = 0;
   state.order.forEach(id => {
     if (state.status[id] === 'mastered') mastered++;
     else if (state.status[id] === 'review') review++;
   });
+  const pct = n => (total ? (n / total) * 100 : 0);   // avoids divide-by-zero
   $('masteredCount').textContent = mastered;
   $('reviewCount').textContent = review;
   $('unratedCount').textContent = total - mastered - review;
-  $('masteredBar').style.width = `${(mastered / total) * 100}%`;
-  $('reviewBar').style.width = `${(review / total) * 100}%`;
+  $('masteredBar').style.width = `${pct(mastered)}%`;
+  $('reviewBar').style.width = `${pct(review)}%`;
+
+  if (empty) {
+    $('progressText').textContent = 'No cards';
+    $('progressBar').style.width = '0%';
+    $('statusBadge').textContent = '';
+    document.title = 'Flashcard Quiz';
+    return;
+  }
+
+  $('progressText').textContent = `Card ${state.index + 1} of ${total}`;
+  $('progressBar').style.width = `${pct(state.index + 1)}%`;
+  document.title = `(${state.index + 1}/${total}) Flashcard Quiz`;   // dynamic tab title
+
+  const s = state.status[card.id];
+  const badge = $('statusBadge');
+  badge.textContent = s === 'mastered' ? 'Mastered' : s === 'review' ? 'Needs review' : 'Not rated yet';
+  badge.className = s === 'mastered' ? 'text-mint font-semibold'
+                  : s === 'review' ? 'text-amber font-semibold' : 'text-slate-400';
 }
 
 /** Re-draw the list of custom cards with delete buttons. */
 function renderCustomList() {
   const list = $('customList');
-  list.innerHTML = '';
+  list.innerHTML = '';   // safe: clearing only; all content below is built with DOM APIs
   state.customCards.forEach(c => {
     const li = document.createElement('li');
     li.className = 'flex items-start justify-between gap-3 rounded-xl bg-panel border border-edge px-4 py-3';
@@ -285,8 +394,8 @@ function renderCustomList() {
 
     const del = document.createElement('button');
     del.className = 'p-2 rounded-lg text-slate-400 hover:text-amber hover:bg-ink shrink-0';
-    del.setAttribute('aria-label', 'Delete card: ' + c.q);
-    del.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';
+    del.setAttribute('aria-label', 'Delete card: ' + c.q.slice(0, 60));
+    del.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';   // static markup only
     del.addEventListener('click', () => deleteCard(c.id));
 
     li.append(text, del);
@@ -296,25 +405,35 @@ function renderCustomList() {
   refreshIcons();
 }
 
-/** Convert <i data-lucide> placeholders into SVG icons (safe if CDN failed). */
+/** Convert <i data-lucide> placeholders into SVG icons (safe if the CDN failed). */
 function refreshIcons() { if (window.lucide) lucide.createIcons(); }
 
-// ---- 5. Card interaction ----
+// ---- 6. Card interaction ----
 function setFlipped(value) {
   flipped = value;
   cardEl.classList.toggle('flipped', flipped);
+  cardEl.setAttribute('aria-pressed', String(flipped));
+  // Hide the face that is turned away from assistive technology
+  $('frontFace').setAttribute('aria-hidden', String(flipped));
+  $('backFace').setAttribute('aria-hidden', String(!flipped));
 }
 
-function flip() { setFlipped(!flipped); }
+function flip() {
+  if (!currentCard()) return;     // nothing to flip in an empty deck
+  setFlipped(!flipped);
+}
 
 /** Move to a card; flip back first so the next answer isn't visible mid-turn. */
 function goTo(newIndex) {
   const total = state.order.length;
-  state.index = (newIndex + total) % total;   // wraps around at both ends
+  if (!total) return;
+  clearTimeout(advanceTimer);     // a manual move cancels any pending auto-advance
+  clearTimeout(renderTimer);
+  state.index = ((newIndex % total) + total) % total;   // wraps at both ends
   saveState();
   if (flipped) {
     setFlipped(false);
-    setTimeout(renderCard, 220);              // update text once the card is face-down
+    renderTimer = setTimeout(renderCard, 220);   // swap text once the card is face-down
   } else {
     renderCard();
   }
@@ -325,6 +444,7 @@ function prev() { goTo(state.index - 1); }
 
 /** Fisher-Yates shuffle of the deck order. */
 function shuffle() {
+  if (state.order.length < 2) return;
   const o = state.order;
   for (let i = o.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -335,42 +455,66 @@ function shuffle() {
 
 /** Mark the current card, then move on (unless it is the last card). */
 function rate(value) {
-  state.status[currentCard().id] = value;
+  const card = currentCard();
+  if (!card) return;
+  state.status[card.id] = value;
   saveState();
   renderProgress();
-  if (state.index < state.order.length - 1) setTimeout(next, 250);
+  clearTimeout(advanceTimer);
+  if (state.index < state.order.length - 1) advanceTimer = setTimeout(next, 250);
 }
 
-// ---- 6. Custom deck creator ----
-function addCard() {
-  const q = $('qInput').value.trim();
-  const a = $('aInput').value.trim();
+// ---- 7. Custom deck creator ----
+function showFormError(msg) {
   const err = $('formError');
-  if (!q || !a) { err.classList.remove('hidden'); return; }
-  err.classList.add('hidden');
+  err.textContent = msg;
+  err.classList.toggle('hidden', !msg);
+}
 
-  const id = 'c' + Date.now() + Math.random().toString(36).slice(2, 6);
+function addCard() {
+  const q = clean($('qInput').value, Q_MAX);
+  const a = clean($('aInput').value, A_MAX);
+
+  if (!q || !a) return showFormError('Enter both a question and an answer.');
+  if (state.customCards.length >= MAX_CUSTOM) return showFormError(`You can add up to ${MAX_CUSTOM} custom cards.`);
+  const dup = allCards().some(c => c.q.toLowerCase() === q.toLowerCase() && c.a.toLowerCase() === a.toLowerCase());
+  if (dup) return showFormError('That card is already in your deck.');
+  showFormError('');
+
+  const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   state.customCards.push({ id, q, a });
   state.order.push(id);
   $('qInput').value = '';
   $('aInput').value = '';
   saveState();
   renderCustomList();
-  renderProgress();
+  renderCard();                 // also refreshes progress (and the empty state if the deck was empty)
+  $('qInput').focus();          // ready for the next card
 }
 
 function deleteCard(id) {
-  const wasCurrent = currentCard().id === id;
+  const cur = currentCard();
+  const curId = cur ? cur.id : null;
+  clearTimeout(advanceTimer);
+  clearTimeout(renderTimer);
   state.customCards = state.customCards.filter(c => c.id !== id);
   delete state.status[id];
   syncOrder();
+  if (curId && curId !== id) {
+    // Keep showing the same card even though earlier positions shifted
+    const i = state.order.indexOf(curId);
+    if (i !== -1) state.index = i;
+  } else {
+    setFlipped(false);          // the shown card was removed; start fresh on its neighbor
+  }
   saveState();
   renderCustomList();
-  if (wasCurrent) { setFlipped(false); }
   renderCard();
 }
 
 function resetProgress() {
+  clearTimeout(advanceTimer);
+  clearTimeout(renderTimer);
   state.status = {};
   state.index = 0;
   setFlipped(false);
@@ -378,7 +522,7 @@ function resetProgress() {
   renderCard();
 }
 
-// ---- 7. Event wiring ----
+// ---- 8. Event wiring ----
 cardEl.addEventListener('click', flip);
 $('prevBtn').addEventListener('click', prev);
 $('nextBtn').addEventListener('click', next);
@@ -387,6 +531,11 @@ $('masterBtn').addEventListener('click', () => rate('mastered'));
 $('reviewBtn').addEventListener('click', () => rate('review'));
 $('addBtn').addEventListener('click', addCard);
 $('resetBtn').addEventListener('click', resetProgress);
+['qInput', 'aInput'].forEach(id => $(id).addEventListener('input', () => showFormError('')));
+
+// Enforce the same limits in the form that the JS sanitizer applies
+$('qInput').maxLength = Q_MAX;
+$('aInput').maxLength = A_MAX;
 
 // Keyboard shortcuts for hands-free study:
 //   Space = flip, Right Arrow = next, Left Arrow = previous.
@@ -405,6 +554,9 @@ document.addEventListener('keydown', e => {
       break;
     case 'ArrowRight': e.preventDefault(); next(); break;
     case 'ArrowLeft':  e.preventDefault(); prev(); break;
+    case 'Enter':
+      if (e.target === cardEl) { e.preventDefault(); flip(); }   // Enter also flips when the card has focus
+      break;
   }
 });
 
@@ -413,8 +565,9 @@ document.addEventListener('keyup', e => {
   if (e.code === 'Space' && !isTyping(e.target)) e.preventDefault();
 });
 
-// ---- 8. Init ----
+// ---- 9. Init ----
 syncOrder();
+setFlipped(false);
 renderCard();
 renderCustomList();
 refreshIcons();
