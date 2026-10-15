@@ -242,6 +242,9 @@ function renderProgress() {
   $('progressText').textContent = `Card ${state.index + 1} of ${total}`;
   $('progressBar').style.width = `${((state.index + 1) / total) * 100}%`;
 
+  // Dynamic browser tab title, e.g. "(1/5) Flashcard Quiz"
+  document.title = `(${state.index + 1}/${total}) Flashcard Quiz`;
+
   // Rating badge for the current card
   const s = state.status[currentCard().id];
   const badge = $('statusBadge');
@@ -385,14 +388,29 @@ $('reviewBtn').addEventListener('click', () => rate('review'));
 $('addBtn').addEventListener('click', addCard);
 $('resetBtn').addEventListener('click', resetProgress);
 
-// Keyboard: Space flips, arrows navigate. Ignored while typing or on buttons
-// (buttons already handle Space/Enter natively).
+// Keyboard shortcuts for hands-free study:
+//   Space = flip, Right Arrow = next, Left Arrow = previous.
+// They work even when a button has focus (e.g. right after clicking "Next"),
+// and are ignored only while typing in the "Add your own card" fields.
+function isTyping(el) {
+  return el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable;
+}
+
 document.addEventListener('keydown', e => {
-  const tag = e.target.tagName;
-  if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'BUTTON') return;
-  if (e.code === 'Space') { e.preventDefault(); flip(); }
-  else if (e.code === 'ArrowRight') next();
-  else if (e.code === 'ArrowLeft') prev();
+  if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+  switch (e.code) {
+    case 'Space':
+      e.preventDefault();          // stop page scroll and focused-button activation
+      if (!e.repeat) flip();       // holding the key shouldn't flip repeatedly
+      break;
+    case 'ArrowRight': e.preventDefault(); next(); break;
+    case 'ArrowLeft':  e.preventDefault(); prev(); break;
+  }
+});
+
+// Firefox fires a button's click on Space *keyup*, so block that too.
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space' && !isTyping(e.target)) e.preventDefault();
 });
 
 // ---- 8. Init ----
